@@ -1,0 +1,184 @@
+
+name: Build JP Ambient
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Generate Android project
+        shell: bash
+        run: |
+          mkdir -p app/src/main/java/com/jpambient
+          mkdir -p app/src/main/res/values
+
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "JPAmbient"
+          include(":app")
+          EOF
+
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.7.3" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+          }
+          EOF
+
+          cat > app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+          }
+          android {
+              namespace = "com.jpambient"
+              compileSdk = 35
+              defaultConfig {
+                  applicationId = "com.jpambient"
+                  minSdk = 23
+                  targetSdk = 28
+                  versionCode = 1
+                  versionName = "1.0"
+              }
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-feature android:name="android.software.leanback" android:required="false"/>
+              <application
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar"
+                  android:label="JP Ambient"
+                  android:usesCleartextTraffic="false">
+                  <activity
+                      android:name=".MainActivity"
+                      android:screenOrientation="landscape"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN"/>
+                          <category android:name="android.intent.category.LAUNCHER"/>
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/java/com/jpambient/MainActivity.kt <<'EOF'
+          package com.jpambient
+
+          import android.app.Activity
+          import android.os.Bundle
+          import android.net.Uri
+          import android.view.View
+          import android.widget.VideoView
+          import android.widget.FrameLayout
+          import android.widget.TextView
+          import android.graphics.Color
+
+          class MainActivity : Activity() {
+              override fun onCreate(savedInstanceState: Bundle?) {
+                  super.onCreate(savedInstanceState)
+
+                  window.decorView.systemUiVisibility = (
+                      View.SYSTEM_UI_FLAG_FULLSCREEN
+                      or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                      or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                      or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                      or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                      or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                  )
+
+                  val layout = FrameLayout(this)
+                  layout.setBackgroundColor(Color.BLACK)
+
+                  val video = VideoView(this)
+                  layout.addView(video, FrameLayout.LayoutParams(-1, -1))
+
+                  val message = TextView(this)
+                  message.text = "JP AMBIENT  •  Chargement du paysage..."
+                  message.setTextColor(Color.WHITE)
+                  message.textSize = 18f
+                  message.setPadding(32, 24, 32, 24)
+                  layout.addView(message)
+                  setContentView(layout)
+
+                  // Vidéo de démonstration en ligne.
+                  // La collection de paysages sera ajoutée ensuite.
+                  val url = "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
+
+                  video.setVideoURI(Uri.parse(url))
+                  video.setOnPreparedListener {
+                      message.visibility = View.GONE
+                      it.isLooping = true
+                      video.start()
+                  }
+                  video.setOnErrorListener { _, _, _ ->
+                      message.text = "Connexion vidéo impossible. Vérifie Internet."
+                      message.visibility = View.VISIBLE
+                      true
+                  }
+                  video.setOnCompletionListener {
+                      video.start()
+                  }
+              }
+          }
+          EOF
+
+      - name: Build APK
+        run: gradle assembleDebug
+
+      - name: Prepare APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk JP-Ambient.apk
+
+      - name: Publish APK release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="jp-ambient-latest"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "JP Ambient Latest" \
+              --notes "Build automatique de JP Ambient." \
+              --latest
+          fi
+          gh release upload "$TAG" JP-Ambient.apk \
+            --repo "$GITHUB_REPOSITORY" --clobber
