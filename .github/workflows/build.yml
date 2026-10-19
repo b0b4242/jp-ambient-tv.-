@@ -12,6 +12,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -24,6 +25,12 @@ jobs:
 
       - name: Android SDK
         uses: android-actions/setup-android@v3
+
+      - name: Accept Android licenses
+        run: yes | sdkmanager --licenses
+
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -67,9 +74,11 @@ jobs:
               id("com.android.application")
               id("org.jetbrains.kotlin.android")
           }
+
           android {
               namespace = "com.jpambient"
               compileSdk = 35
+
               defaultConfig {
                   applicationId = "com.jpambient"
                   minSdk = 23
@@ -83,15 +92,21 @@ jobs:
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET"/>
-              <uses-feature android:name="android.software.leanback" android:required="false"/>
+
+              <uses-feature
+                  android:name="android.software.leanback"
+                  android:required="false"/>
+
               <application
                   android:theme="@android:style/Theme.Material.Light.NoActionBar"
                   android:label="JP Ambient"
                   android:usesCleartextTraffic="false">
+
                   <activity
                       android:name=".MainActivity"
                       android:screenOrientation="landscape"
                       android:exported="true">
+
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN"/>
                           <category android:name="android.intent.category.LAUNCHER"/>
@@ -130,31 +145,38 @@ jobs:
                   layout.setBackgroundColor(Color.BLACK)
 
                   val video = VideoView(this)
-                  layout.addView(video, FrameLayout.LayoutParams(-1, -1))
+                  layout.addView(
+                      video,
+                      FrameLayout.LayoutParams(-1, -1)
+                  )
 
                   val message = TextView(this)
-                  message.text = "JP AMBIENT  •  Chargement du paysage..."
+                  message.text = "JP AMBIENT • Chargement du paysage..."
                   message.setTextColor(Color.WHITE)
                   message.textSize = 18f
                   message.setPadding(32, 24, 32, 24)
                   layout.addView(message)
+
                   setContentView(layout)
 
-                  // Vidéo de démonstration en ligne.
-                  // La collection de paysages sera ajoutée ensuite.
-                  val url = "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
+                  val url =
+                      "https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4"
 
                   video.setVideoURI(Uri.parse(url))
+
                   video.setOnPreparedListener {
                       message.visibility = View.GONE
                       it.isLooping = true
                       video.start()
                   }
+
                   video.setOnErrorListener { _, _, _ ->
-                      message.text = "Connexion vidéo impossible. Vérifie Internet."
+                      message.text =
+                          "Connexion vidéo impossible. Vérifie Internet."
                       message.visibility = View.VISIBLE
                       true
                   }
+
                   video.setOnCompletionListener {
                       video.start()
                   }
@@ -173,6 +195,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="jp-ambient-latest"
+
           if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release create "$TAG" \
               --repo "$GITHUB_REPOSITORY" \
@@ -180,5 +203,7 @@ jobs:
               --notes "Build automatique de JP Ambient." \
               --latest
           fi
+
           gh release upload "$TAG" JP-Ambient.apk \
-            --repo "$GITHUB_REPOSITORY" --clobber
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
